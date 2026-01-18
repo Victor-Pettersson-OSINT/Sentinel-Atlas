@@ -97,7 +97,6 @@ The goal is not just to build software — but to build a platform that people c
 - Maps: Mapbox / Leaflet  
 - Realtime: WebSockets  
 - Queue: Redis + BullMQ  
-- Storage: S3-compatible  
 - Search: PostgreSQL Full Text / Meilisearch  
 
 ---
