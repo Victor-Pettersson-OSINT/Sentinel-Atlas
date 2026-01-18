@@ -1,0 +1,262 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubmissionStatus {
+  pending
+  escalated
+  approved
+  rejected
+  archived
+}
+
+enum WorkflowLevel {
+  regional
+  nordic
+  european
+  global
+}
+
+enum RegionType {
+  global
+  macro
+  country
+}
+
+enum ModerationActionType {
+  approve
+  reject
+  escalate
+  comment
+}
+
+enum TagRecommendation {
+  approve
+  reject
+  escalate
+}
+
+model User {
+  id        String     @id @default(uuid())
+  auth0Id   String     @unique
+  email     String?    @unique
+  name      String?
+  roles     UserRole[]
+  regionScopes UserRegionScope[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  submissions Submission[] @relation("UserSubmissions")
+  moderationActions ModerationAction[] @relation("UserModerationActions")
+  tagReviews TagReview[] @relation("UserTagReviews")
+  auditLogs AuditLog[] @relation("UserAuditLogs")
+}
+
+model Role {
+  id        String     @id @default(uuid())
+  key       String     @unique
+  name      String
+  users     UserRole[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User @relation(fields: [userId], references: [id])
+  role   Role @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+}
+
+model Region {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  type      RegionType @default(country)
+  parentId  String?
+  parent    Region?  @relation("RegionHierarchy", fields: [parentId], references: [id])
+  children  Region[] @relation("RegionHierarchy")
+  userScopes UserRegionScope[]
+  submissions Submission[]
+}
+
+model UserRegionScope {
+  userId   String
+  regionId String
+  user     User   @relation(fields: [userId], references: [id])
+  region   Region @relation(fields: [regionId], references: [id])
+
+  @@id([userId, regionId])
+  @@index([regionId])
+}
+
+model Submission {
+  id            String            @id @default(uuid())
+  title         String
+  description   String
+  status        SubmissionStatus  @default(pending)
+  currentLevel  WorkflowLevel     @default(regional)
+  country       String
+  regionId      String?
+  region        Region?           @relation(fields: [regionId], references: [id])
+  latitude      Decimal
+  longitude     Decimal
+  location      Unsupported("geography(Point, 4326)")
+  sourceUrl     String?
+  createdById   String?
+  createdBy     User?             @relation("UserSubmissions", fields: [createdById], references: [id])
+  ipHash        String?
+  userAgent     String?
+  metadata      Json?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  tags          SubmissionTag[]
+  media         SubmissionMedia[]
+  moderationActions ModerationAction[]
+  revisions     SubmissionRevision[]
+  tagReviews    TagReview[]
+
+  @@index([status])
+  @@index([country])
+  @@index([regionId])
+  @@index([createdAt])
+  @@index([location], map: "idx_submission_location", type: Gist)
+}
+
+model MediaAsset {
+  id         String   @id @default(uuid())
+  storageKey String   @unique
+  mimeType   String
+  sizeBytes  Int
+  checksum   String?
+  createdById String?
+  createdBy  User?    @relation(fields: [createdById], references: [id])
+  createdAt  DateTime @default(now())
+  submissions SubmissionMedia[]
+}
+
+model SubmissionMedia {
+  submissionId String
+  mediaId      String
+  submission   Submission @relation(fields: [submissionId], references: [id])
+  media        MediaAsset @relation(fields: [mediaId], references: [id])
+
+  @@id([submissionId, mediaId])
+}
+
+model ModerationAction {
+  id           String               @id @default(uuid())
+  submissionId String
+  submission   Submission           @relation(fields: [submissionId], references: [id])
+  actorId      String?
+  actor        User?                @relation("UserModerationActions", fields: [actorId], references: [id])
+  action       ModerationActionType
+  level        WorkflowLevel
+  reason       String?
+  createdAt    DateTime             @default(now())
+}
+
+model Tag {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  assignments SubmissionTag[]
+  specialists TagSpecialistAssignment[]
+  flowTags    CuratedFlowTag[]
+}
+
+model SubmissionTag {
+  submissionId String
+  tagId        String
+  submission   Submission @relation(fields: [submissionId], references: [id])
+  tag          Tag        @relation(fields: [tagId], references: [id])
+
+  @@id([submissionId, tagId])
+}
+
+model TagSpecialistAssignment {
+  userId String
+  tagId  String
+  user   User @relation(fields: [userId], references: [id])
+  tag    Tag  @relation(fields: [tagId], references: [id])
+
+  @@id([userId, tagId])
+}
+
+model TagReview {
+  id           String            @id @default(uuid())
+  submissionId String
+  tagId        String
+  reviewerId   String
+  recommendation TagRecommendation
+  comment      String?
+  createdAt    DateTime          @default(now())
+  submission   Submission @relation(fields: [submissionId], references: [id])
+  tag          Tag        @relation(fields: [tagId], references: [id])
+  reviewer     User       @relation("UserTagReviews", fields: [reviewerId], references: [id])
+
+  @@index([submissionId])
+  @@index([tagId])
+}
+
+model SubmissionRevision {
+  id           String   @id @default(uuid())
+  submissionId String
+  editorId     String?
+  editor       User?    @relation(fields: [editorId], references: [id])
+  reason       String
+  changes      Json
+  createdAt    DateTime @default(now())
+  submission   Submission @relation(fields: [submissionId], references: [id])
+
+  @@index([submissionId])
+}
+
+model CuratedFlow {
+  id            String   @id @default(uuid())
+  name          String
+  regionId      String?
+  country       String?
+  priority      Int      @default(0)
+  isAutoTrending Boolean @default(false)
+  enabled       Boolean  @default(true)
+  order         Int      @default(0)
+  createdById   String?
+  createdBy     User?    @relation(fields: [createdById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  tags          CuratedFlowTag[]
+
+  @@index([regionId])
+  @@index([country])
+}
+
+model CuratedFlowTag {
+  flowId String
+  tagId  String
+  flow   CuratedFlow @relation(fields: [flowId], references: [id])
+  tag    Tag         @relation(fields: [tagId], references: [id])
+
+  @@id([flowId, tagId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actor      User?    @relation("UserAuditLogs", fields: [actorId], references: [id])
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}

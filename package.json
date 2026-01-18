@@ -1,0 +1,14 @@
+{
+  "name": "sentinel-atlas",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm -w apps/web run dev",
+    "dev:api": "npm -w apps/api run start:dev",
+    "build:shared": "npm -w packages/shared run build",
+    "lint": "npm -ws run lint"
+  }
+}
